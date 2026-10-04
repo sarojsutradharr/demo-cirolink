@@ -1,0 +1,46 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@layer base {
+  :root {
+    --cream-bg: #F7F1E8;
+    --cream-surface: #FAF6F0;
+    --cream-border: #E8DCCB;
+    --cream-muted: #8C827A;
+    --dark-ink: #1C1917;
+    --accent-cognac: #C26732;
+    --accent-hover: #A85324;
+  }
+
+  body {
+    background-color: var(--cream-bg);
+    color: var(--dark-ink);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Custom scrollbars matching the cream palette */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F7F1E8;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #D9CBBA;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #C2B09B;
+}
+
+/* Tabular figures for all counters, stats, and tables */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}

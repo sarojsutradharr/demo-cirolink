@@ -1,0 +1,6 @@
+{
+  "name": "Cirolink Word Counter",
+  "description": "Production-ready SaaS Word Counter and Text Analyzer with credits, Supabase database, and Stripe subscriptions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
