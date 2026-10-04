@@ -12,12 +12,17 @@ export function Navbar() {
   return (
     <header className="sticky top-0 z-40 w-full border-b border-[#E8DCCB] bg-[#F7F1E8]/90 backdrop-blur-md transition-colors">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        {/* Zone 1: Single text wordmark */}
+        {/* Zone 1: Single text wordmark with author credit */}
         <Link
           href="/"
-          className="text-xl font-bold tracking-tight text-[#1C1917] transition-opacity hover:opacity-90"
+          className="flex items-center gap-2 transition-opacity hover:opacity-90"
         >
-          Cirolink<span className="text-[#C26732]">.</span>
+          <span className="text-xl font-bold tracking-tight text-[#1C1917]">
+            Cirolink<span className="text-[#C26732]">.</span>
+          </span>
+          <span className="inline-flex items-center rounded-md bg-[#FAF6F0] px-2 py-0.5 text-[10px] font-semibold text-[#78716C] border border-[#E8DCCB]">
+            by Saroj sutradhar
+          </span>
         </Link>
 
         {/* Zone 2: 4-6 text navigation links */}

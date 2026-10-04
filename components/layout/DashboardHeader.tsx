@@ -32,9 +32,15 @@ export function DashboardHeader({ title, subtitle, onOpenMobile }: HeaderProps) 
           <Menu className="h-5 w-5" />
         </button>
         <div>
-          <h1 className="text-base sm:text-lg font-bold tracking-tight text-[#1C1917]">
-            {title}
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-base sm:text-lg font-bold tracking-tight text-[#1C1917]">
+              {title}
+            </h1>
+            <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-[#FAF6F0] border border-[#E8DCCB] px-2 py-0.5 text-[10px] font-medium text-[#57534E]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#C26732]" />
+              Saroj sutradhar
+            </span>
+          </div>
           {subtitle && (
             <p className="hidden text-xs text-[#78716C] sm:block">
               {subtitle}

@@ -33,7 +33,7 @@ export default function HomePage() {
               {/* Product Badge */}
               <div className="inline-flex items-center gap-2 rounded-full border border-[#E8DCCB] bg-[#FAF6F0] px-3.5 py-1 text-xs font-semibold text-[#1C1917] shadow-2xs">
                 <span className="flex h-2 w-2 rounded-full bg-[#C26732]" />
-                <span>Cirolink Word Counter & Text Analyzer</span>
+                <span>Cirolink by Saroj sutradhar · Word Counter & Text Analyzer</span>
               </div>
 
               {/* Headline */}
@@ -43,8 +43,7 @@ export default function HomePage() {
 
               {/* Subtitle */}
               <p className="mt-6 text-base sm:text-lg text-[#57534E] leading-relaxed text-balance">
-                Instantly count words, characters, sentences, paragraphs, reading time, and more
-                with Cirolink. A refined, distraction-free SaaS for writers, editors, and publishing teams.
+                Created by <strong className="font-semibold text-[#1C1917]">Saroj sutradhar</strong>. Instantly count words, characters, sentences, paragraphs, reading time, and more with Cirolink — a refined, distraction-free SaaS for writers, editors, and publishing teams.
               </p>
 
               {/* CTAs */}

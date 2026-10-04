@@ -82,7 +82,7 @@ export function Footer() {
 
         <div className="mt-12 flex flex-col items-center justify-between border-t border-[#E8DCCB] pt-8 sm:flex-row">
           <p className="text-xs text-[#8C827A]">
-            &copy; {new Date().getFullYear()} Cirolink.com. All rights reserved.
+            &copy; {new Date().getFullYear()} Cirolink by Saroj sutradhar. All rights reserved.
           </p>
           <p className="mt-2 text-xs text-[#8C827A] sm:mt-0">
             Powered by Next.js, Supabase PostgreSQL & Stripe.
