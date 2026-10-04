@@ -8,14 +8,26 @@ import {
   KeyRound,
   Check,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Database,
+  ExternalLink,
+  Copy,
+  Code
 } from 'lucide-react';
+import { SUPABASE_SCHEMA_SQL } from '@/lib/supabase/schema-sql';
 
 export default function SettingsPage() {
   const { user, resetPassword } = useAuth();
   const [fullName, setFullName] = useState(user?.full_name || '');
   const [isSaved, setIsSaved] = useState(false);
   const [resetSent, setResetSent] = useState(false);
+  const [copiedSql, setCopiedSql] = useState(false);
+
+  const handleCopySql = () => {
+    navigator.clipboard.writeText(SUPABASE_SCHEMA_SQL);
+    setCopiedSql(true);
+    setTimeout(() => setCopiedSql(false), 2500);
+  };
 
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
@@ -174,6 +186,84 @@ export default function SettingsPage() {
               <span>Reset instructions sent to your email.</span>
             </div>
           )}
+        </div>
+
+        {/* Supabase Database & Auth Integration Status */}
+        <div className="rounded-2xl border border-[#E8DCCB] bg-white p-6 shadow-xs">
+          <div className="flex items-center justify-between border-b border-[#E8DCCB] pb-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <Database className="h-4 w-4 text-[#16A34A]" />
+                <h3 className="text-base font-bold text-[#1C1917]">Supabase Backend & Authentication</h3>
+              </div>
+              <p className="text-xs text-[#78716C] mt-0.5">
+                Connected to your dedicated Supabase PostgreSQL project.
+              </p>
+            </div>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#F0FDF4] border border-[#16A34A]/30 px-3 py-1 text-xs font-semibold text-[#166534]">
+              <span className="h-2 w-2 rounded-full bg-[#16A34A]" />
+              Connected
+            </span>
+          </div>
+
+          <div className="mt-4 space-y-3 text-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 rounded-xl bg-[#FAF6F0] p-3 border border-[#E8DCCB]">
+              <span className="text-[#78716C]">Project URL:</span>
+              <code className="font-mono text-[#1C1917] font-semibold">{process.env.NEXT_PUBLIC_SUPABASE_URL || 'Configured in .env'}</code>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 rounded-xl bg-[#FAF6F0] p-3 border border-[#E8DCCB]">
+              <span className="text-[#78716C]">Authentication:</span>
+              <span className="text-[#1C1917] font-medium">Supabase Auth (Email/Password, OAuth, Sessions)</span>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 rounded-xl bg-[#FAF6F0] p-3 border border-[#E8DCCB]">
+              <span className="text-[#78716C]">Database Tables:</span>
+              <span className="text-[#1C1917] font-medium">profiles, analyses, credit_transactions (with RLS)</span>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-[#E8DCCB]/80 bg-[#FAF6F0]/60 p-4 text-[#57534E] leading-relaxed">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
+                <div>
+                  <p className="font-semibold text-[#1C1917]">Supabase SQL Schema Ready</p>
+                  <p className="text-[11px] text-[#78716C] mt-0.5">
+                    Includes <code className="bg-white px-1 py-0.5 rounded border border-[#E8DCCB] font-mono text-[10px]">profiles</code>, <code className="bg-white px-1 py-0.5 rounded border border-[#E8DCCB] font-mono text-[10px]">analyses</code>, <code className="bg-white px-1 py-0.5 rounded border border-[#E8DCCB] font-mono text-[10px]">credit_transactions</code>, RLS, and <code className="bg-white px-1 py-0.5 rounded border border-[#E8DCCB] font-mono text-[10px]">handle_new_user</code> trigger (+5 free credits).
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCopySql}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-[#C26732] px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-[#A95525] transition-colors cursor-pointer"
+                  >
+                    {copiedSql ? (
+                      <>
+                        <Check className="h-3.5 w-3.5" />
+                        <span>Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3.5 w-3.5" />
+                        <span>Copy SQL Script</span>
+                      </>
+                    )}
+                  </button>
+                  <a
+                    href="https://supabase.com/dashboard/project/mfjuxdbpiggvebfeuwth/sql/new"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 rounded-lg border border-[#E8DCCB] bg-white px-2.5 py-1.5 text-xs font-medium text-[#1C1917] hover:bg-[#FAF6F0] transition-colors"
+                  >
+                    <span>Supabase SQL Editor</span>
+                    <ExternalLink className="h-3 w-3 text-[#78716C]" />
+                  </a>
+                </div>
+              </div>
+              <p className="text-[11px] text-[#78716C]">
+                Also saved in <code className="bg-white px-1.5 py-0.5 rounded border border-[#E8DCCB] font-mono text-[11px]">supabase-schema.sql</code> and <code className="bg-white px-1.5 py-0.5 rounded border border-[#E8DCCB] font-mono text-[11px]">supabase/schema.sql</code>.
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -146,44 +146,79 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
 
   // Initialize data from Supabase or localStorage
   useEffect(() => {
+    let isMounted = true;
+    const supabase = getSupabaseClient();
+
+    async function loadUserData(userId: string, userEmail?: string, userFullName?: string) {
+      if (!supabase) return;
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .maybeSingle();
+
+        if (profile) {
+          const maxCredits = PLAN_CREDITS[profile.plan as PlanType] || 5;
+          if (isMounted) setUser({ ...profile, max_credits: maxCredits });
+        } else {
+          // Provision initial profile on the fly if trigger didn't run
+          const newProfile: UserProfile = {
+            id: userId,
+            email: userEmail || 'user@cirolink.com',
+            full_name: userFullName || userEmail?.split('@')[0] || 'Cirolink Writer',
+            plan: 'free',
+            credits: 5,
+            max_credits: 5,
+            subscription_status: 'active',
+            credits_reset_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+          try {
+            await supabase.from('profiles').upsert([newProfile]);
+          } catch {}
+          if (isMounted) setUser(newProfile);
+        }
+
+        const { data: userAnalyses } = await supabase
+          .from('analyses')
+          .select('*')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false });
+
+        if (userAnalyses && isMounted) {
+          setAnalyses(userAnalyses);
+        }
+
+        const { data: userTxs } = await supabase
+          .from('credit_transactions')
+          .select('*')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false });
+
+        if (userTxs && isMounted) {
+          setTransactions(userTxs);
+        }
+      } catch (err) {
+        console.warn('Supabase data load error:', err);
+      }
+    }
+
     async function init() {
       setIsLoading(true);
-      const supabase = getSupabaseClient();
 
       if (supabase) {
         try {
           const { data: { session } } = await supabase.auth.getSession();
           if (session?.user) {
-            const { data: profile } = await supabase
-              .from('profiles')
-              .select('*')
-              .eq('id', session.user.id)
-              .single();
-
-            if (profile) {
-              const maxCredits = PLAN_CREDITS[profile.plan as PlanType] || 5;
-              setUser({ ...profile, max_credits: maxCredits });
-            }
-
-            const { data: userAnalyses } = await supabase
-              .from('analyses')
-              .select('*')
-              .eq('user_id', session.user.id)
-              .order('created_at', { ascending: false });
-
-            if (userAnalyses) {
-              setAnalyses(userAnalyses);
-            }
-
-            const { data: userTxs } = await supabase
-              .from('credit_transactions')
-              .select('*')
-              .eq('user_id', session.user.id)
-              .order('created_at', { ascending: false });
-
-            if (userTxs) {
-              setTransactions(userTxs);
-            }
+            await loadUserData(
+              session.user.id,
+              session.user.email,
+              session.user.user_metadata?.full_name as string
+            );
+          } else {
+            if (isMounted) setUser(null);
           }
         } catch (err) {
           console.warn('Could not connect to live Supabase, falling back to local state:', err);
@@ -195,7 +230,6 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
           if (savedUser) {
             setUser(JSON.parse(savedUser));
           } else {
-            // Unauthenticated by default until user logs in or registers
             setUser(null);
           }
 
@@ -218,10 +252,40 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      setIsLoading(false);
+      if (isMounted) setIsLoading(false);
     }
 
     init();
+
+    // Listen for auth state changes (sign in, sign out, token refresh)
+    let authListener: { subscription: { unsubscribe: () => void } } | null = null;
+    if (supabase) {
+      const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (!isMounted) return;
+        if (event === 'SIGNED_IN' && session?.user) {
+          await loadUserData(
+            session.user.id,
+            session.user.email,
+            session.user.user_metadata?.full_name as string
+          );
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null);
+          setAnalyses([]);
+          setTransactions([]);
+          try {
+            localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
+          } catch {}
+        }
+      });
+      authListener = data;
+    }
+
+    return () => {
+      isMounted = false;
+      if (authListener) {
+        authListener.subscription.unsubscribe();
+      }
+    };
   }, []);
 
   // Save changes to localStorage when in preview mode

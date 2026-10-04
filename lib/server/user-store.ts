@@ -55,10 +55,11 @@ function writeDbFile(db: DbSchema) {
 
 // Optional Supabase sync helper
 function getSupabaseAdmin() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const cleanUrl = rawUrl.replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (supabaseUrl && supabaseKey && supabaseUrl.startsWith('https://')) {
-    return createClient(supabaseUrl, supabaseKey);
+  if (cleanUrl && supabaseKey && cleanUrl.startsWith('https://')) {
+    return createClient(cleanUrl, supabaseKey);
   }
   return null;
 }
