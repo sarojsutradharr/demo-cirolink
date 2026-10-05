@@ -38,7 +38,7 @@ export default function HomePage() {
 
               {/* Headline */}
               <h1 className="mt-6 text-4xl font-extrabold tracking-tight sm:text-6xl text-[#1C1917] text-balance leading-[1.12]">
-                Count Words. Understand Your Text.
+                Saroj Sutradhar Word Counter
               </h1>
 
               {/* Subtitle */}
