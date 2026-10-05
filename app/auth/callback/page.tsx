@@ -30,6 +30,7 @@ function AuthCallbackContent() {
           return;
         }
 
+        // 1. Handle PKCE code exchange
         if (code) {
           const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
           if (exchangeError) {
@@ -37,16 +38,28 @@ function AuthCallbackContent() {
             if (isMounted) setErrorMsg(exchangeError.message);
             return;
           }
-        } else {
-          // If hash tokens were parsed automatically or session already exists
-          const { data: { session } } = await supabase.auth.getSession();
-          if (!session) {
-            // Wait brief moment for client auth listener to detect session in URL hash
-            await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+
+        // 2. Handle URL hash tokens (implicit flow)
+        if (typeof window !== 'undefined' && window.location.hash) {
+          const hashParams = new URLSearchParams(window.location.hash.substring(1));
+          const accessToken = hashParams.get('access_token');
+          const refreshToken = hashParams.get('refresh_token');
+          if (accessToken && refreshToken) {
+            await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
           }
         }
 
-        // If opened inside a popup window, notify the opener
+        // Verify session is active
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          await new Promise((resolve) => setTimeout(resolve, 600));
+        }
+
+        // If opened inside a popup window, notify the opener and close
         if (typeof window !== 'undefined' && window.opener) {
           try {
             window.opener.postMessage({ type: 'SUPABASE_AUTH_SUCCESS' }, '*');
@@ -59,7 +72,7 @@ function AuthCallbackContent() {
           }
         }
 
-        // Navigate to dashboard
+        // Navigate to dashboard in main tab
         router.push('/dashboard');
       } catch (err: any) {
         if (isMounted) setErrorMsg(err?.message || 'Authentication failed');
@@ -93,7 +106,7 @@ function AuthCallbackContent() {
           <div className="pt-2">
             <button
               onClick={() => router.push('/login')}
-              className="w-full rounded-xl bg-[#1C1917] py-2.5 text-xs font-semibold text-white hover:bg-[#2D231E] transition-colors"
+              className="w-full rounded-xl bg-[#1C1917] py-2.5 text-xs font-semibold text-white hover:bg-[#2D231E] transition-colors cursor-pointer"
             >
               Return to Sign In
             </button>
@@ -107,7 +120,7 @@ function AuthCallbackContent() {
           <div>
             <h2 className="text-base font-bold text-[#1C1917]">Completing Google Sign In</h2>
             <p className="mt-1 text-xs text-[#78716C] leading-relaxed">
-              Verifying your Google authentication credentials and loading your dashboard...
+              Verifying your credentials and preparing your dashboard...
             </p>
           </div>
         </div>

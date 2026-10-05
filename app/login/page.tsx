@@ -21,6 +21,8 @@ export default function LoginPage() {
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
 
+  const [googleAuthUrl, setGoogleAuthUrl] = useState<string | null>(null);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
@@ -47,11 +49,12 @@ export default function LoginPage() {
     try {
       const res = await signInWithGoogle();
       if (res.success) {
-        // If top redirect is occurring, the page will navigate;
-        // if inside popup, onAuthStateChange or postMessage will detect session
+        if (res.url) {
+          setGoogleAuthUrl(res.url);
+        }
         setTimeout(() => {
           setIsGoogleLoading(false);
-        }, 1500);
+        }, 1200);
       } else {
         setErrorMsg(res.error || 'Google authentication failed');
         setIsGoogleLoading(false);
@@ -142,6 +145,23 @@ export default function LoginPage() {
               <p className="mt-2 text-center text-[11px] text-[#78716C]">
                 Sign in with your Gmail or Google Workspace account without a password.
               </p>
+
+              {googleAuthUrl && (
+                <div className="mt-3 rounded-xl border border-[#C26732]/30 bg-white p-3 text-center shadow-xs">
+                  <p className="text-[11px] text-[#57534E] mb-2 font-medium">
+                    Popup window didn&apos;t open or blocked?
+                  </p>
+                  <a
+                    href={googleAuthUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-[#C26732] px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-[#A95525] transition-colors"
+                  >
+                    <span>Click here to open Google Sign In</span>
+                    <ArrowRight className="h-3 w-3" />
+                  </a>
+                </div>
+              )}
             </div>
 
             {/* DIVIDER */}

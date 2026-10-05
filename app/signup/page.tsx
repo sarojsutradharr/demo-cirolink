@@ -18,6 +18,7 @@ export default function SignupPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [googleAuthUrl, setGoogleAuthUrl] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,9 +52,12 @@ export default function SignupPage() {
     try {
       const res = await signInWithGoogle();
       if (res.success) {
+        if (res.url) {
+          setGoogleAuthUrl(res.url);
+        }
         setTimeout(() => {
           setIsGoogleLoading(false);
-        }, 1500);
+        }, 1200);
       } else {
         setErrorMsg(res.error || 'Google registration failed');
         setIsGoogleLoading(false);
@@ -136,6 +140,23 @@ export default function SignupPage() {
               <p className="mt-2 text-center text-[11px] text-[#78716C]">
                 Instant 1-click registration. Auto-grants 5 free credits and syncs across devices.
               </p>
+
+              {googleAuthUrl && (
+                <div className="mt-3 rounded-xl border border-[#C26732]/30 bg-white p-3 text-center shadow-xs">
+                  <p className="text-[11px] text-[#57534E] mb-2 font-medium">
+                    Popup window didn&apos;t open or blocked?
+                  </p>
+                  <a
+                    href={googleAuthUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-[#C26732] px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-[#A95525] transition-colors"
+                  >
+                    <span>Click here to open Google Registration</span>
+                    <ArrowRight className="h-3 w-3" />
+                  </a>
+                </div>
+              )}
             </div>
 
             {/* DIVIDER */}

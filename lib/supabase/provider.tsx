@@ -13,7 +13,7 @@ interface AuthContextType {
   transactions: CreditTransaction[];
   login: (email: string, password?: string) => Promise<{ success: boolean; error?: string }>;
   signup: (email: string, password?: string, fullName?: string) => Promise<{ success: boolean; error?: string }>;
-  signInWithGoogle: () => Promise<{ success: boolean; error?: string }>;
+  signInWithGoogle: () => Promise<{ success: boolean; error?: string; url?: string }>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ success: boolean; message: string }>;
   consumeCreditForAnalysis: (
@@ -450,7 +450,7 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
     return { success: true };
   }, []);
 
-  const signInWithGoogle = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
+  const signInWithGoogle = useCallback(async (): Promise<{ success: boolean; error?: string; url?: string }> => {
     const supabase = getSupabaseClient();
     if (supabase) {
       try {
@@ -458,8 +458,39 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
         const isIframe = typeof window !== 'undefined' && window.self !== window.top;
 
         if (isIframe) {
-          // Inside iframe, obtain authorization URL without automatic browser redirect
-          // to prevent Google X-Frame-Options: DENY blocking inside the frame
+          // Open popup window SYNCHRONOUSLY before the async operation
+          // This keeps the user click gesture active so browser popup blockers do NOT block the window!
+          let popup: Window | null = null;
+          try {
+            popup = window.open('about:blank', 'google_oauth_popup', 'width=520,height=650,scrollbars=yes,status=no,toolbar=no');
+            if (popup) {
+              popup.document.write(`
+                <!DOCTYPE html>
+                <html>
+                  <head>
+                    <meta charset="utf-8">
+                    <title>Connecting to Google...</title>
+                    <style>
+                      body { font-family: system-ui, -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #FAF6F0; color: #1C1917; text-align: center; }
+                      .box { background: white; padding: 24px; border-radius: 16px; border: 1px solid #E8DCCB; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); max-width: 320px; }
+                      .spinner { width: 28px; height: 28px; border: 3px solid #E8DCCB; border-top-color: #C26732; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 12px; }
+                      @keyframes spin { to { transform: rotate(360deg); } }
+                    </style>
+                  </head>
+                  <body>
+                    <div class="box">
+                      <div class="spinner"></div>
+                      <h4 style="margin: 0 0 6px;">Opening Google Sign-In</h4>
+                      <p style="margin: 0; font-size: 13px; color: #78716C;">Please select your Google account...</p>
+                    </div>
+                  </body>
+                </html>
+              `);
+            }
+          } catch (e) {
+            console.warn('Could not open blank popup synchronously:', e);
+          }
+
           const { data, error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
@@ -467,16 +498,22 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
               skipBrowserRedirect: true,
             },
           });
-          if (error) return { success: false, error: error.message };
+
+          if (error) {
+            if (popup && !popup.closed) popup.close();
+            return { success: false, error: error.message };
+          }
+
           if (data?.url) {
-            const popup = window.open(data.url, 'google_oauth_popup', 'width=540,height=680,scrollbars=yes');
-            if (!popup) {
+            if (popup && !popup.closed) {
+              popup.location.href = data.url;
+              return { success: true, url: data.url };
+            } else {
+              // If popup was blocked or closed, try window.open directly or provide url
               try {
-                if (window.top) window.top.location.href = data.url;
-                else window.location.href = data.url;
-              } catch {
-                window.location.href = data.url;
-              }
+                window.open(data.url, '_blank');
+              } catch {}
+              return { success: true, url: data.url };
             }
           }
           return { success: true };
