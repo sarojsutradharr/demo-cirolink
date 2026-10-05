@@ -227,7 +227,7 @@ export default function SettingsPage() {
                 <div>
                   <p className="font-semibold text-[#1C1917]">Supabase SQL Schema Ready</p>
                   <p className="text-[11px] text-[#78716C] mt-0.5">
-                    Includes <code className="bg-white px-1 py-0.5 rounded border border-[#E8DCCB] font-mono text-[10px]">profiles</code>, <code className="bg-white px-1 py-0.5 rounded border border-[#E8DCCB] font-mono text-[10px]">analyses</code>, <code className="bg-white px-1 py-0.5 rounded border border-[#E8DCCB] font-mono text-[10px]">credit_transactions</code>, RLS, and <code className="bg-white px-1 py-0.5 rounded border border-[#E8DCCB] font-mono text-[10px]">handle_new_user</code> trigger (+5 free credits).
+                    Includes <code className="bg-white px-1 py-0.5 rounded border border-[#E8DCCB] font-mono text-[10px]">profiles</code>, <code className="bg-white px-1 py-0.5 rounded border border-[#E8DCCB] font-mono text-[10px]">analyses</code>, <code className="bg-white px-1 py-0.5 rounded border border-[#E8DCCB] font-mono text-[10px]">credit_transactions</code>, RLS, and <code className="bg-white px-1 py-0.5 rounded border border-[#E8DCCB] font-mono text-[10px]">handle_user_auth_sync</code> (syncs user details on register & login + 5 credits).
                   </p>
                 </div>
                 <div className="flex items-center gap-2">

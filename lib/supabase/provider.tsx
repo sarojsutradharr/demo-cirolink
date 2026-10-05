@@ -149,7 +149,7 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
     let isMounted = true;
     const supabase = getSupabaseClient();
 
-    async function loadUserData(userId: string, userEmail?: string, userFullName?: string) {
+    async function loadUserData(userId: string, userEmail?: string, userFullName?: string, userAvatarUrl?: string) {
       if (!supabase) return;
       try {
         const { data: profile } = await supabase
@@ -160,6 +160,31 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
 
         if (profile) {
           const maxCredits = PLAN_CREDITS[profile.plan as PlanType] || 5;
+
+          // Check if Google OAuth or login provides updated/missing name or avatar details
+          const nameToUpdate = userFullName && (!profile.full_name || profile.full_name === 'Cirolink Writer') ? userFullName : profile.full_name;
+          const avatarToUpdate = userAvatarUrl && !profile.avatar_url ? userAvatarUrl : profile.avatar_url;
+          const emailToUpdate = userEmail && profile.email !== userEmail ? userEmail : profile.email;
+
+          if (nameToUpdate !== profile.full_name || avatarToUpdate !== profile.avatar_url || emailToUpdate !== profile.email) {
+            try {
+              await supabase
+                .from('profiles')
+                .update({
+                  email: emailToUpdate,
+                  full_name: nameToUpdate,
+                  avatar_url: avatarToUpdate,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('id', userId);
+              profile.email = emailToUpdate;
+              profile.full_name = nameToUpdate;
+              profile.avatar_url = avatarToUpdate;
+            } catch (syncErr) {
+              console.warn('Error syncing profile updates:', syncErr);
+            }
+          }
+
           if (isMounted) setUser({ ...profile, max_credits: maxCredits });
         } else {
           // Provision initial profile on the fly if trigger didn't run
@@ -167,6 +192,7 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
             id: userId,
             email: userEmail || 'user@cirolink.com',
             full_name: userFullName || userEmail?.split('@')[0] || 'Cirolink Writer',
+            avatar_url: userAvatarUrl || '',
             plan: 'free',
             credits: 5,
             max_credits: 5,
@@ -177,6 +203,14 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
           };
           try {
             await supabase.from('profiles').upsert([newProfile]);
+            await supabase.from('credit_transactions').insert([{
+              id: `tx_welcome_${userId.replace(/-/g, '').slice(0, 16)}`,
+              user_id: userId,
+              amount: 5,
+              transaction_type: 'signup_bonus',
+              description: 'Free Plan welcome bonus (5 credits)',
+              created_at: new Date().toISOString(),
+            }]);
           } catch {}
           if (isMounted) setUser(newProfile);
         }
@@ -212,11 +246,10 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
         try {
           const { data: { session } } = await supabase.auth.getSession();
           if (session?.user) {
-            await loadUserData(
-              session.user.id,
-              session.user.email,
-              session.user.user_metadata?.full_name as string
-            );
+            const meta = session.user.user_metadata || {};
+            const fullName = (meta.full_name || meta.name || '') as string;
+            const avatarUrl = (meta.avatar_url || meta.picture || '') as string;
+            await loadUserData(session.user.id, session.user.email, fullName, avatarUrl);
           } else {
             if (isMounted) setUser(null);
           }
@@ -263,11 +296,10 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
       const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
         if (!isMounted) return;
         if (event === 'SIGNED_IN' && session?.user) {
-          await loadUserData(
-            session.user.id,
-            session.user.email,
-            session.user.user_metadata?.full_name as string
-          );
+          const meta = session.user.user_metadata || {};
+          const fullName = (meta.full_name || meta.name || '') as string;
+          const avatarUrl = (meta.avatar_url || meta.picture || '') as string;
+          await loadUserData(session.user.id, session.user.email, fullName, avatarUrl);
         } else if (event === 'SIGNED_OUT') {
           setUser(null);
           setAnalyses([]);
@@ -280,8 +312,29 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
       authListener = data;
     }
 
+    // Also listen for popup postMessage events from /auth/callback
+    const handlePopupMessage = async (event: MessageEvent) => {
+      if (!isMounted || !supabase) return;
+      if (event.data?.type === 'SUPABASE_AUTH_SUCCESS') {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) {
+            const meta = session.user.user_metadata || {};
+            const fullName = (meta.full_name || meta.name || '') as string;
+            const avatarUrl = (meta.avatar_url || meta.picture || '') as string;
+            await loadUserData(session.user.id, session.user.email, fullName, avatarUrl);
+          }
+        } catch (err) {
+          console.warn('Session refresh from message error:', err);
+        }
+      }
+    };
+
+    window.addEventListener('message', handlePopupMessage);
+
     return () => {
       isMounted = false;
+      window.removeEventListener('message', handlePopupMessage);
       if (authListener) {
         authListener.subscription.unsubscribe();
       }
@@ -401,16 +454,45 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
     const supabase = getSupabaseClient();
     if (supabase) {
       try {
-        const { error } = await supabase.auth.signInWithOAuth({
-          provider: 'google',
-          options: {
-            redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/dashboard` : undefined,
-          },
-        });
-        if (error) return { success: false, error: error.message };
-        return { success: true };
+        const redirectUrl = typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined;
+        const isIframe = typeof window !== 'undefined' && window.self !== window.top;
+
+        if (isIframe) {
+          // Inside iframe, obtain authorization URL without automatic browser redirect
+          // to prevent Google X-Frame-Options: DENY blocking inside the frame
+          const { data, error } = await supabase.auth.signInWithOAuth({
+            provider: 'google',
+            options: {
+              redirectTo: redirectUrl,
+              skipBrowserRedirect: true,
+            },
+          });
+          if (error) return { success: false, error: error.message };
+          if (data?.url) {
+            const popup = window.open(data.url, 'google_oauth_popup', 'width=540,height=680,scrollbars=yes');
+            if (!popup) {
+              try {
+                if (window.top) window.top.location.href = data.url;
+                else window.location.href = data.url;
+              } catch {
+                window.location.href = data.url;
+              }
+            }
+          }
+          return { success: true };
+        } else {
+          // Standard browser top-level flow
+          const { error } = await supabase.auth.signInWithOAuth({
+            provider: 'google',
+            options: {
+              redirectTo: redirectUrl,
+            },
+          });
+          if (error) return { success: false, error: error.message };
+          return { success: true };
+        }
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Google sign in failed';
+        const message = err instanceof Error ? err.message : 'Google authentication failed';
         return { success: false, error: message };
       }
     }

@@ -12,8 +12,11 @@
 -- - Full text analysis history & statistical records
 -- - Immutable credit transactions ledger
 -- - Row-Level Security (RLS) policies for Email/Password & Google OAuth (Gmail)
--- - Automated 'handle_new_user' trigger with 5 free credits on signup
--- - Atomic stored procedure for deduction with concurrency lock
+-- - Automated 'handle_user_auth_sync' trigger for BOTH register and login
+-- - Syncs full details (email, name, Google avatar) to public.profiles table
+-- - Allocates 5 free credits on first signup with audit ledger entry
+-- - Callable 'sync_user_profile' RPC function
+-- - Atomic stored procedure 'deduct_credit_for_analysis' with concurrency lock
 -- ==============================================================================
 
 -- 1. Enable required PostgreSQL extensions
@@ -96,16 +99,12 @@ CREATE INDEX IF NOT EXISTS idx_profiles_stripe_customer_id ON public.profiles(st
 -- ==============================================================================
 -- 6. ROW LEVEL SECURITY (RLS) POLICIES
 -- Fully supports Email/Password authentication & Gmail (Google OAuth)
--- In Supabase Auth, auth.uid() automatically resolves to the authenticated user's ID
--- regardless of whether they signed up via email/password or Gmail OAuth.
 -- ==============================================================================
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.analyses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.credit_transactions ENABLE ROW LEVEL SECURITY;
 
--- ------------------------------------------------------------------------------
--- RLS Policies for PROFILES
--- ------------------------------------------------------------------------------
+-- Profiles Policies
 DROP POLICY IF EXISTS "Users can read own profile" ON public.profiles;
 CREATE POLICY "Users can read own profile"
     ON public.profiles FOR SELECT
@@ -127,9 +126,7 @@ CREATE POLICY "Users can delete own profile"
     ON public.profiles FOR DELETE
     USING (auth.uid() = id);
 
--- ------------------------------------------------------------------------------
--- RLS Policies for ANALYSES
--- ------------------------------------------------------------------------------
+-- Analyses Policies
 DROP POLICY IF EXISTS "Users can view own analyses" ON public.analyses;
 CREATE POLICY "Users can view own analyses"
     ON public.analyses FOR SELECT
@@ -151,9 +148,7 @@ CREATE POLICY "Users can delete own analyses"
     ON public.analyses FOR DELETE
     USING (auth.uid() = user_id);
 
--- ------------------------------------------------------------------------------
--- RLS Policies for CREDIT_TRANSACTIONS
--- ------------------------------------------------------------------------------
+-- Credit Transactions Policies
 DROP POLICY IF EXISTS "Users can view own credit transactions" ON public.credit_transactions;
 CREATE POLICY "Users can view own credit transactions"
     ON public.credit_transactions FOR SELECT
@@ -165,12 +160,12 @@ CREATE POLICY "Users can insert own credit transactions"
     WITH CHECK (auth.uid() = user_id);
 
 -- ==============================================================================
--- 7. TRIGGER FUNCTION: handle_new_user
--- Automatically triggers when a new user registers in auth.users
--- Works for BOTH Email/Password and Gmail (Google OAuth) signups
--- Automatically provisions the profiles row and grants 5 FREE CREDITS
+-- 7. FUNCTION & TRIGGERS: handle_user_auth_sync
+-- Automatically executes whenever a user REGISTERS or LOGS IN via Google or Email
+-- Automatically saves and syncs user details into the 'profiles' table.
+-- Grants 5 free credits on first signup with welcome transaction.
 -- ==============================================================================
-CREATE OR REPLACE FUNCTION public.handle_new_user()
+CREATE OR REPLACE FUNCTION public.handle_user_auth_sync()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -179,8 +174,9 @@ AS $$
 DECLARE
     v_full_name TEXT;
     v_avatar_url TEXT;
+    v_existing_id UUID;
 BEGIN
-    -- Extract full name from Google OAuth metadata or standard signup metadata
+    -- Extract full name from Google OAuth metadata, signup metadata, or email fallback
     v_full_name := COALESCE(
         NEW.raw_user_meta_data->>'full_name',
         NEW.raw_user_meta_data->>'name',
@@ -188,86 +184,167 @@ BEGIN
         'Cirolink Writer'
     );
 
-    -- Extract avatar URL from Google OAuth or signup metadata
+    -- Extract avatar URL from Google OAuth (picture) or user metadata
     v_avatar_url := COALESCE(
         NEW.raw_user_meta_data->>'avatar_url',
         NEW.raw_user_meta_data->>'picture',
         ''
     );
 
-    -- 1. Create or safely update user profile entry with 5 free initial credits
-    INSERT INTO public.profiles (
-        id,
-        email,
-        full_name,
-        avatar_url,
-        plan,
-        credits,
-        max_credits,
-        subscription_status,
-        credits_reset_at,
-        created_at,
-        updated_at
-    )
-    VALUES (
-        NEW.id,
-        NEW.email,
-        v_full_name,
-        v_avatar_url,
-        'free',
-        5,
-        5,
-        'active',
-        NOW() + INTERVAL '30 days',
-        NOW(),
-        NOW()
-    )
-    ON CONFLICT (id) DO UPDATE SET
-        email = EXCLUDED.email,
-        full_name = CASE 
-            WHEN public.profiles.full_name IS NULL OR public.profiles.full_name = '' THEN EXCLUDED.full_name 
-            ELSE public.profiles.full_name 
-        END,
-        avatar_url = CASE 
-            WHEN public.profiles.avatar_url IS NULL OR public.profiles.avatar_url = '' THEN EXCLUDED.avatar_url 
-            ELSE public.profiles.avatar_url 
-        END,
-        updated_at = NOW();
+    -- Check if profile entry already exists
+    SELECT id INTO v_existing_id FROM public.profiles WHERE id = NEW.id;
 
-    -- 2. Record the 5 free welcome credits in the credit_transactions audit ledger
-    INSERT INTO public.credit_transactions (
-        id,
-        user_id,
-        amount,
-        transaction_type,
-        description,
-        created_at
-    )
-    VALUES (
-        'tx_welcome_' || replace(NEW.id::text, '-', ''),
-        NEW.id,
-        5,
-        'signup_bonus',
-        'Free Plan initial welcome bonus (5 credits)',
-        NOW()
-    )
-    ON CONFLICT (id) DO NOTHING;
+    IF v_existing_id IS NULL THEN
+        -- ON REGISTER (Email or Google OAuth):
+        -- Create new profile entry and assign 5 free initial credits
+        INSERT INTO public.profiles (
+            id,
+            email,
+            full_name,
+            avatar_url,
+            plan,
+            credits,
+            max_credits,
+            subscription_status,
+            credits_reset_at,
+            created_at,
+            updated_at
+        )
+        VALUES (
+            NEW.id,
+            NEW.email,
+            v_full_name,
+            v_avatar_url,
+            'free',
+            5,
+            5,
+            'active',
+            NOW() + INTERVAL '30 days',
+            NOW(),
+            NOW()
+        );
+
+        -- Record welcome credits bonus in credit_transactions ledger
+        INSERT INTO public.credit_transactions (
+            id,
+            user_id,
+            amount,
+            transaction_type,
+            description,
+            created_at
+        )
+        VALUES (
+            'tx_welcome_' || replace(NEW.id::text, '-', ''),
+            NEW.id,
+            5,
+            'signup_bonus',
+            'Free Plan welcome bonus (5 credits)',
+            NOW()
+        )
+        ON CONFLICT (id) DO NOTHING;
+    ELSE
+        -- ON LOGIN (Email or Google OAuth):
+        -- Synchronize latest email, full name, and avatar URL from Google into profiles table
+        UPDATE public.profiles
+        SET 
+            email = NEW.email,
+            full_name = CASE 
+                WHEN v_full_name IS NOT NULL AND v_full_name != '' THEN v_full_name
+                ELSE public.profiles.full_name
+            END,
+            avatar_url = CASE 
+                WHEN v_avatar_url IS NOT NULL AND v_avatar_url != '' THEN v_avatar_url
+                ELSE public.profiles.avatar_url
+            END,
+            updated_at = NOW()
+        WHERE id = NEW.id;
+    END IF;
 
     RETURN NEW;
 END;
 $$;
 
--- Create the trigger on auth.users
+-- Backwards-compatible alias for handle_new_user
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    RETURN public.handle_user_auth_sync();
+END;
+$$;
+
+-- Attach triggers on auth.users for BOTH registration (INSERT) and login (UPDATE)
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW
-    EXECUTE FUNCTION public.handle_new_user();
+    EXECUTE FUNCTION public.handle_user_auth_sync();
+
+DROP TRIGGER IF EXISTS on_auth_user_updated ON auth.users;
+CREATE TRIGGER on_auth_user_updated
+    AFTER UPDATE ON auth.users
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_user_auth_sync();
 
 -- ==============================================================================
--- 8. ATOMIC STORED PROCEDURE: deduct_credit_for_analysis
+-- 8. CALLABLE STORED PROCEDURE: sync_user_profile
+-- Allows client apps or API routes to directly sync profile details to Supabase
+-- ==============================================================================
+CREATE OR REPLACE FUNCTION public.sync_user_profile(
+    p_user_id UUID,
+    p_email TEXT,
+    p_full_name TEXT DEFAULT '',
+    p_avatar_url TEXT DEFAULT ''
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_profile public.profiles%ROWTYPE;
+BEGIN
+    SELECT * INTO v_profile FROM public.profiles WHERE id = p_user_id;
+
+    IF NOT FOUND THEN
+        -- Insert new profile if not found
+        INSERT INTO public.profiles (
+            id, email, full_name, avatar_url, plan, credits, max_credits, subscription_status, credits_reset_at
+        ) VALUES (
+            p_user_id, p_email, COALESCE(p_full_name, split_part(p_email, '@', 1)), COALESCE(p_avatar_url, ''),
+            'free', 5, 5, 'active', NOW() + INTERVAL '30 days'
+        )
+        RETURNING * INTO v_profile;
+
+        INSERT INTO public.credit_transactions (
+            id, user_id, amount, transaction_type, description
+        ) VALUES (
+            'tx_welcome_' || replace(p_user_id::text, '-', ''),
+            p_user_id, 5, 'signup_bonus', 'Free Plan welcome bonus (5 credits)'
+        )
+        ON CONFLICT (id) DO NOTHING;
+    ELSE
+        -- Update existing profile on login
+        UPDATE public.profiles
+        SET 
+            email = p_email,
+            full_name = CASE WHEN p_full_name IS NOT NULL AND p_full_name != '' THEN p_full_name ELSE public.profiles.full_name END,
+            avatar_url = CASE WHEN p_avatar_url IS NOT NULL AND p_avatar_url != '' THEN p_avatar_url ELSE public.profiles.avatar_url END,
+            updated_at = NOW()
+        WHERE id = p_user_id
+        RETURNING * INTO v_profile;
+    END IF;
+
+    RETURN to_jsonb(v_profile);
+END;
+$$;
+
+-- ==============================================================================
+-- 9. ATOMIC STORED PROCEDURE: deduct_credit_for_analysis
 -- Ensures atomic, race-condition-safe credit deduction when analyzing text
--- Locks the row with FOR UPDATE during deduction
 -- ==============================================================================
 CREATE OR REPLACE FUNCTION public.deduct_credit_for_analysis(p_user_id UUID)
 RETURNS JSONB
